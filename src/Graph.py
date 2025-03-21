@@ -2,9 +2,8 @@ import numpy as np
 import time
 from src.Edge import Edge
 from src.Node import Node
+from collections import deque
 
-def get_random_color():
-    return list(np.random.choice(range(256), size=3))
 
 class Graph:
     def __init__(self):
@@ -14,10 +13,11 @@ class Graph:
         self.selected_obj = None
         self.radius = 30
         self.count = 0
+        self.visited = None
+        self.nodes_stored = None
 
     def add_node(self, pos, text_generator):
-        node = Node(pos, self.count, (0,0,0))
-        node.create_label(text_generator, get_random_color())
+        node = Node(pos, self.count, text_generator)
         self.nodes[self.count] = node
         self.objects.append(node)
         self.count+=1
@@ -56,8 +56,8 @@ class Graph:
             for edge in edges:
                 self.edges.remove(edge)
                 self.objects.remove(edge)
-            self.objects.remove(self.nodes[self.selected_obj.name])
-            del self.nodes[self.selected_obj.name]
+            self.objects.remove(self.nodes[self.selected_obj.id])
+            del self.nodes[self.selected_obj.id]
             
         elif(isinstance(self.selected_obj, Edge)):
             self.edges.remove(self.selected_obj)
@@ -65,36 +65,40 @@ class Graph:
         del self.selected_obj
         self.selected_obj = None
 
-    def update_edges(self, radius):
+    def update_edges(self, radius, arrow_size):
         for edge in self.edges:
-            edge.update(radius = radius)
+            edge.update(radius = radius, arrow_size=arrow_size)
 
-    def update_nodes(self, radius):
-        for node in self.nodes.values():
-            node.update(radius = radius)
     
-    def update_selected_obj(self, radius, pos):
-        if(isinstance(self.selected_obj, Node)):
-            self.selected_obj.update(pos=pos)
-        elif(isinstance(self.selected_obj, Edge)):
-            self.selected_obj.update(radius, pos)
+    def update_selected_obj(self, radius, pos, arrow_size):
+        if(self.select_object):
+            if(isinstance(self.selected_obj, Node)):
+                self.selected_obj.update(pos=pos)
+            elif(isinstance(self.selected_obj, Edge)):
+                self.selected_obj.update(radius, arrow_size, pos)
 
-    def dfs(self):
-        visited = np.zeros(len(self.nodes), dtype=bool)
-        color = (239, 239, 38)
-        width = 2
+    def dfs(self, sleep_time):
+        self.visited = {i : False for i in [x.id for x in self.nodes.values()]}
+        
         for node in self.nodes.values():
-            node.dfs(visited, color, width)
+            node.dfs(self.visited, sleep_time)
+        
+        self.visited = None
+
+    def bfs(self, sleep_time):
+        visited = {i : False for i in [x.id for x in self.nodes.values()]}
+        for node in self.nodes.values():
+            self.visited = visited.copy()
+            self.nodes_stored = deque()
+            node.bfs(self.visited, self.nodes_stored, sleep_time)
+        
+        self.visited = None
+        self.nodes_stored = None
 
 
-            
-    def render(self, screen):
-        for obj in self.objects:
-            obj.render(screen)
-
-    def update(self, radius):
-        self.update_nodes(radius)
-        self.update_edges(radius)
+    def update(self, radius, pos, arrow_size):
+        self.update_selected_obj(radius, pos, arrow_size)
+        self.update_edges(radius, arrow_size=arrow_size)
 
     
             
