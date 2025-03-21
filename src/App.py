@@ -2,143 +2,90 @@ import pygame as pg
 from src.Graph import Graph
 from src.StoppableThread import StoppableThread
 from collections import deque
+import numpy as np
 import time
+from src.Logic import Logic
 
-DOUBLE_CLICK_TIME = 0.2
 
 class App:
     def __init__(self, screen_width = 1280, screen_height= 720):
-        self.width, self.height = screen_width, screen_height
-        self.screen = None
-        self.running = None
-        self.clock = None
-        self.last_click_time = 0
-        self.radius = 30
-        self.mouse_pos = None
-        self.graph = None
-        self.events = {}
-        self.font = None
-        self.algorithm = None
-        self.process = deque()
-
-        self.init()
- 
-    def init(self):
         pg.init()
-        self.init_variables()
-        self.init_renderer_screen()
-        self.init_event_handlers()
-        self.init_variables()
-
-    def init_variables(self):
+        self.width, self.height = screen_width, screen_height
+        self.size = [self.width, self.height]
         self.screen_size = [self.width, self.height]
-        self.running = True
+
+        self.node_radius = 30
+
+        self.node_color = [0,0,0]
+        self.visited_node_color = [239, 239, 38]
+        self.edge_color = [0,0,0]
+
+        self.node_width = 2
+        self.visited_node_width = 2
+        self.edge_width = 2
+
+        self.arrow_size = 10
+
+        self.screen = pg.display.set_mode(self.screen_size, pg.HWSURFACE | pg.DOUBLEBUF)
         self.clock = pg.time.Clock()
         self.mouse_pos = pg.mouse.get_pos()
         self.font = pg.font.Font(None, 30)
-        self.graph = Graph()
-
-    def init_renderer_screen(self):
-        self.screen = pg.display.set_mode(self.screen_size, pg.HWSURFACE | pg.DOUBLEBUF)
-
-    def init_event_handlers(self):
-        self.events['CREATE_NODE'] = False
-        self.events['BLOCK_CREATE_EDGE'] = False
-        self.events['MOVING_OBJ'] = False
+        self.running = True
 
     def poll_event(self):
         self.mouse_pos = pg.mouse.get_pos()
         for event in pg.event.get():
+            if event.type == pg.QUIT:
+                    self.running = False
 
-            keys = pg.key.get_pressed()
-            mouse = pg.mouse.get_pressed()
+            elif(pg.key.get_pressed()[pg.K_LSHIFT] and pg.mouse.get_pressed()[0]):
+                with self.logic.lock:
+                    self.logic.input_list.append('LSHIT+LEFT_MOUSE')
 
-            if (event.type == pg.QUIT):
-                self.running = False
-    
-            if(keys[pg.K_LSHIFT] and mouse[0]):
-                    self.create_edge_event()
-                    self.events['BLOCK_CREATE_EDGE'] = True
-                    self.events['MOVING_OBJ'] = True
+            else:
+                with self.logic.lock:
+                    self.logic.input_list.append(event)
 
-            elif (event.type == pg.MOUSEBUTTONDOWN):
-                if (event.button == 1):  # 1 é o botão esquerdo do mouse
-                    if (self.double_click_event()):
-                        self.create_node_event()
-                    else:
-                        self.select_movable_obj_event()
-                        self.events['MOVING_OBJ'] = True
+    def render_graph(self):
+        nodes = self.logic.graph.nodes
+        edges = self.logic.graph.edges
+        visited = self.logic.graph.visited
 
-            if(keys[pg.K_DELETE]):
-                self.delete_selected_obj_event()
+        if(visited):
+            for i in visited:
+                node = nodes[i]
+                if(visited[i]):
+                    node.rect = pg.draw.circle(self.screen, self.visited_node_color, node.pos, self.node_radius, self.visited_node_width)
+                    self.screen.blit(node.label, node.label.get_rect(center=node.pos))
+                else:
+                    node.rect = pg.draw.circle(self.screen, self.node_color, node.pos, self.node_radius, self.node_width)
+                    self.screen.blit(node.label, node.label.get_rect(center=node.pos))
 
-            if(keys[pg.K_d]):
-                self.algorithm = True
-                
-            if (event.type == pg.MOUSEBUTTONUP):
-                self.events['MOVING_OBJ'] = False
-                if(self.events['BLOCK_CREATE_EDGE']):
-                    self.events['BLOCK_CREATE_EDGE']= False
-                    self.check_created_edge()
-                
-                self.shift_pressed = False
-                self.target_node = None
+        else:
+            for node in nodes.values():
+                node.rect = pg.draw.circle(self.screen, self.node_color, node.pos, self.node_radius, self.node_width)
+                self.screen.blit(node.label, node.label.get_rect(center=node.pos))
 
-    def double_click_event(self):
-        current_time = time.time()
-        if (current_time - self.last_click_time <= DOUBLE_CLICK_TIME):
-            self.last_click_time = current_time
-            return True
-        self.last_click_time = current_time
-        return False
-    
-    def create_node_event(self):
-        self.graph.add_node(self.mouse_pos, self.font)
-
-    def create_edge_event(self):
-        if(self.events['BLOCK_CREATE_EDGE'] == False):
-            self.graph.add_edge(self.mouse_pos)
-
-    def select_movable_obj_event(self):
-        self.graph.select_object(self.mouse_pos)
-
-    def delete_selected_obj_event(self):
-        self.graph.delete_selected_obj()
-    
-    def check_created_edge(self):
-        self.graph.check_created_edge(self.mouse_pos)
-
-    def update_selected_obj(self):
-        if (self.events['MOVING_OBJ']):
-            self.graph.update_selected_obj(self.radius, self.mouse_pos)
-
-    def run_algorithm(self):
-        if (self.algorithm):
-            algorithm_thread = StoppableThread(target=self.graph.dfs)
-            algorithm_thread.start()
-            self.process.append(algorithm_thread)
-            self.algorithm = None
-
-    def update(self):
-        self.poll_event()
-        self.run_algorithm()
-        self.update_selected_obj()
-        self.graph.update(self.radius)
+        for edge in edges:
+            if(edge.arrow):
+                edge.rect = pg.draw.line(self.screen, self.edge_color, edge.start, edge.end, width=self.edge_width)
+                pg.draw.polygon(self.screen, self.edge_color, edge.arrow)
+            else:
+                edge.rect = pg.draw.line(self.screen, self.edge_color, edge.start, edge.end, width=self.edge_width)
 
     def render(self):
-        self.screen.fill((255, 255, 255))  # Fill screen with white
+        self.screen.fill((255, 255, 255))
 
-        self.graph.render(self.screen)
+        self.render_graph()
         
         pg.display.update()
         self.clock.tick(60)
     
-
-    def close_app(self):
-        for process in self.process:
-            process.stop()
-        for process in self.process:
-            process.join()
+    def start(self):
+        self.logic = Logic(self)
+        self.logic.start_loop()
+        while (self.running):
+            self.poll_event()
+            self.render()
         pg.quit()
-
     
