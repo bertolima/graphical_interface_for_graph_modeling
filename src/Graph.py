@@ -1,52 +1,101 @@
 import numpy as np
 import time
-from src.Edge import Edge
+from src.Edge import Edge, Pseudo_edge
 from src.Node import Node
 from collections import deque
+from random import randint
+import pygame as pg
 
 
 class Graph:
-    def __init__(self):
+    def __init__(self, app):
         self.objects = []
         self.nodes:dict[Node] = {}
         self.edges:list[Edge] = []
+
         self.selected_obj = None
+
         self.radius = 30
         self.count = 0
+        self.app = app
+
         self.visited = None
         self.nodes_stored = None
 
-    def add_node(self, pos, text_generator):
-        node = Node(pos, self.count, text_generator)
+        self.node_radius = 30
+
+        self.node_color = [0,0,0]
+        self.visited_node_color = [239, 239, 38]
+        self.edge_color = [0,0,0]
+
+        self.node_width = 2
+        self.visited_node_width = 2
+        self.edge_width = 2
+
+        self.arrow_size = 10
+
+    def add_node(self):
+        node = Node(self.app.mouse_pos, self.count, self.app.font)
         self.nodes[self.count] = node
         self.objects.append(node)
         self.count+=1
 
-    def add_edge(self, pos):
+    def add_edge(self):
         for node in self.nodes.values():
-            if (node.check(pos)):
-                edge = Edge(node, pos)
-                self.edges.append(edge)
-                self.objects.append(edge)
+            if (node.check(self.app.mouse_pos, self.node_radius)):
+                edge = Pseudo_edge(node, self.app.mouse_pos)
                 self.selected_obj = edge
                 return
             
-    def check_created_edge(self, pos):
-        if(self.selected_obj):
+    def from_adjacency_list(self, adjacency_list):
+        for u, v in adjacency_list:
+            node_u = None
+            node_v = None
+            if(u not in self.nodes):
+                node_u = Node([randint(0, self.app.screen_size[0]), randint(0,self.app.screen_size[1])], u, self.app.font)
+                self.nodes[u] = node_u
+                self.objects.append(node_u)
+            else:
+                node_u = self.nodes[u]
+            
+            if(v not in self.nodes):
+                node_v = Node([randint(0, self.app.screen_size[0]), randint(0,self.app.screen_size[1])], v, self.app.font)
+                self.nodes[v] = node_v
+                self.objects.append(node_v)
+            else:
+                node_v = self.nodes[v]
+
+            edge = Edge(n1=node_u, n2=node_v, origin=self.app.origin, node_radius=self.node_radius, arrow_size=self.arrow_size)
+            self.edges.append(edge)
+            self.objects.append(edge)
+            node_u.adjacency_list.append(node_v)
+
+            
+    def check_created_edge(self):
+        if(isinstance(self.selected_obj, Pseudo_edge)):
             for node in self.nodes.values():
-                if (node != self.selected_obj.n1 and node.check(pos)):
-                    self.selected_obj.n2 = node
-                    self.selected_obj.n1.adjacency_list.append(node)
+                if (node != self.selected_obj.n1 and node.check(self.app.mouse_pos, self.node_radius)):
+                    u = self.selected_obj.n1
+                    v = node
+
+                    u.adjacency_list.append(v)
+                    edge = Edge(u, v, self.app.origin, self.node_radius, self.arrow_size)
+                    self.edges.append(edge)
+                    self.objects.append(edge)
+                    del self.selected_obj
+                    self.selected_obj = None
                     return
-            self.edges.remove(self.selected_obj)
-            self.objects.remove(self.selected_obj)
             del self.selected_obj
             self.selected_obj = None
 
-    def select_object(self, pos):
-        for obj in self.objects:
-            if (obj.check(pos)):
-                self.selected_obj = obj
+    def select_object(self):
+        for edge in self.edges:
+            if (edge.check(self.app.mouse_pos)):
+                self.selected_obj = edge
+                return
+        for node in self.nodes.values():
+            if (node.check(self.app.mouse_pos, self.radius)):
+                self.selected_obj = node
                 return
         self.selected_obj = None
 
@@ -65,17 +114,33 @@ class Graph:
         del self.selected_obj
         self.selected_obj = None
 
-    def update_edges(self, radius, arrow_size):
+    def update_edges(self):
+        nodes_outdated = {}
         for edge in self.edges:
-            edge.update(radius = radius, arrow_size=arrow_size)
+            if(not edge.n1.updated or not edge.n2.updated):
+                nodes_outdated[edge.n1.id] = edge.n1
+                nodes_outdated[edge.n2.id] = edge.n2
+                edge.update(radius = self.node_radius, arrow_size=self.arrow_size, origin_direction=self.app.origin)
 
+        for node in nodes_outdated.values():
+            node.updated = True
     
-    def update_selected_obj(self, radius, pos, arrow_size):
+    def update_selected_obj(self):
         if(self.select_object):
             if(isinstance(self.selected_obj, Node)):
-                self.selected_obj.update(pos=pos)
+                self.selected_obj.update(pos=self.app.mouse_pos)
             elif(isinstance(self.selected_obj, Edge)):
-                self.selected_obj.update(radius, arrow_size, pos)
+                edge = Pseudo_edge(self.selected_obj.n1, self.selected_obj.n2.pos)
+                self.objects.remove(self.selected_obj)
+                self.edges.remove(self.selected_obj)
+
+                del self.selected_obj
+                self.selected_obj = None
+                self.selected_obj = edge
+
+                return 'creating_edge'
+            elif(isinstance(self.selected_obj, Pseudo_edge)):
+                self.selected_obj.update(self.app.mouse_pos)
 
     def dfs(self, sleep_time):
         self.visited = {i : False for i in [x.id for x in self.nodes.values()]}
@@ -96,9 +161,26 @@ class Graph:
         self.nodes_stored = None
 
 
-    def update(self, radius, pos, arrow_size):
-        self.update_selected_obj(radius, pos, arrow_size)
-        self.update_edges(radius, arrow_size=arrow_size)
+    def update(self):
+        self.update_edges()
+
+    def render(self, screen):
+        if (isinstance(self.selected_obj, Pseudo_edge)):
+            self.selected_obj.render(self.edge_color, screen)
+        if(self.visited):
+            for i in self.visited:
+                node = self.nodes[i]
+                if(self.visited[i]):
+                    node.render(self.node_radius, self.visited_node_width, self.visited_node_color, screen)
+                else:
+                    node.render(self.node_radius, self.node_width, self.node_color, screen)
+
+        else:
+            for node in self.nodes.values():
+                node.render(self.node_radius, self.node_width, self.node_color, screen)
+
+        for edge in self.edges:
+            edge.render(self.edge_color, screen)
 
     
             

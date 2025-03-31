@@ -9,16 +9,16 @@ class Node:
         self.pos = np.array(pos)
         self.id = node_id
         self.adjacency_list = []
-        self.rect:pg.Rect = None
         self.label = text_generator.render(str(self.id), True, get_random_color())
+        self.updated = True
     
     def update(self, pos=None):
         if (pos):
             self.pos = np.array(pos)
+            self.updated = False
     
     def dfs(self, visited, sleep_time):
         visited[self.id] = True
-        print(self.id)
         time.sleep(sleep_time)
         for node in self.adjacency_list:
             if(not visited[node.id]):
@@ -44,7 +44,9 @@ class Node:
                 time.sleep(sleep_time)
 
 
-    def check(self, point):
-        if(self.rect):
-            return self.rect.collidepoint(point)
-        return False
+    def check(self, point, radius):
+        return np.linalg.norm(point - self.pos) <= radius
+    
+    def render(self, radius, width, color, screen):
+        pg.draw.circle(screen, color, self.pos, radius, width)
+        screen.blit(self.label, self.label.get_rect(center=self.pos))

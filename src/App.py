@@ -8,29 +8,16 @@ from src.Logic import Logic
 
 
 class App:
-    def __init__(self, screen_width = 1280, screen_height= 720):
+    def __init__(self, screen_width = 1280, screen_height= 720, main_path=None):
         pg.init()
-        self.width, self.height = screen_width, screen_height
-        self.size = [self.width, self.height]
-        self.screen_size = [self.width, self.height]
-
-        self.node_radius = 30
-
-        self.node_color = [0,0,0]
-        self.visited_node_color = [239, 239, 38]
-        self.edge_color = [0,0,0]
-
-        self.node_width = 2
-        self.visited_node_width = 2
-        self.edge_width = 2
-
-        self.arrow_size = 10
-
+        self.screen_size = np.array([screen_width, screen_height])
         self.screen = pg.display.set_mode(self.screen_size, pg.HWSURFACE | pg.DOUBLEBUF)
         self.clock = pg.time.Clock()
         self.mouse_pos = pg.mouse.get_pos()
         self.font = pg.font.Font(None, 30)
         self.running = True
+        self.dir = main_path
+        self.origin = np.array([self.screen_size[0], self.screen_size[1]/2])
 
     def poll_event(self):
         self.mouse_pos = pg.mouse.get_pos()
@@ -45,47 +32,25 @@ class App:
             else:
                 with self.logic.lock:
                     self.logic.input_list.append(event)
-
-    def render_graph(self):
-        nodes = self.logic.graph.nodes
-        edges = self.logic.graph.edges
-        visited = self.logic.graph.visited
-
-        if(visited):
-            for i in visited:
-                node = nodes[i]
-                if(visited[i]):
-                    node.rect = pg.draw.circle(self.screen, self.visited_node_color, node.pos, self.node_radius, self.visited_node_width)
-                    self.screen.blit(node.label, node.label.get_rect(center=node.pos))
-                else:
-                    node.rect = pg.draw.circle(self.screen, self.node_color, node.pos, self.node_radius, self.node_width)
-                    self.screen.blit(node.label, node.label.get_rect(center=node.pos))
-
-        else:
-            for node in nodes.values():
-                node.rect = pg.draw.circle(self.screen, self.node_color, node.pos, self.node_radius, self.node_width)
-                self.screen.blit(node.label, node.label.get_rect(center=node.pos))
-
-        for edge in edges:
-            if(edge.arrow):
-                edge.rect = pg.draw.line(self.screen, self.edge_color, edge.start, edge.end, width=self.edge_width)
-                pg.draw.polygon(self.screen, self.edge_color, edge.arrow)
-            else:
-                edge.rect = pg.draw.line(self.screen, self.edge_color, edge.start, edge.end, width=self.edge_width)
+        
 
     def render(self):
         self.screen.fill((255, 255, 255))
 
-        self.render_graph()
+        self.graph.render(self.screen)
         
         pg.display.update()
         self.clock.tick(60)
     
     def start(self):
-        self.logic = Logic(self)
+        self.graph = Graph(self)
+        self.logic = Logic(self, self.graph)
+        
         self.logic.start_loop()
+
         while (self.running):
             self.poll_event()
             self.render()
+
         pg.quit()
     

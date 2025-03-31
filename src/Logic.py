@@ -2,27 +2,24 @@ import threading
 import time
 import pygame as pg
 from src.Graph import Graph
+import os
 
 DOUBLE_CLICK_TIME = 0.2
-
-EVENTS = ['DOUBLE_CLICK', 'MOUSE_UP', 'CLICK']
-
+ALGORITHM_SLEEP = 0.5
 
 class Logic:
     # This will run in another thread
-    def __init__(self, game):
+    def __init__(self, app, graph):
         self._last_click_time = 0
-        self.creating_edge = False
+        self.flags = {'creating_edge' : False, 'moving_obj' : False}
 
         # Threaded fields -> Those accessible from other threads
-        self.game = game
-        self.graph = Graph()
+        self.app = app
+        self.graph = graph
         self.input_list = []  # A list of commands to queue up for execution
         self.mouse_status = 'FREE'
         self.keyboard_status = 'FREE'
-        self.algorithm_sleep = 0.5
-        self.algorithm = None
-
+        self.event = None
 
         # A lock ensures that nothing else can edit the variable while we're changing it
         self.lock = threading.Lock()
@@ -43,14 +40,16 @@ class Logic:
                     self.keyboard_status = 'NEW_EDGE'
                 elif (ev.type == pg.KEYDOWN):
                     self.keyboard_status = ev.key
+                elif (ev.type == pg.KEYUP):
+                    self.keyboard_status = 'FREE'
                 elif(ev.type == pg.MOUSEBUTTONDOWN):
                     self.mouse_click_event()
                 elif(ev.type == pg.MOUSEBUTTONUP):
                     self.mouse_release_event()
 
             with self.lock:  # Again we call the lock because we're editing
-                self.update()
-            self.run_algorithm()
+                self.event_handler()
+            self.graph.update()
 
 
     def start_loop(self):
@@ -60,84 +59,105 @@ class Logic:
                          args=(),
                          daemon=True).start()
         
+    def event_handler(self):
+        self.update_events_by_key()
+        self.update_events_by_mouse()
+        
+        if(self.event):
+            event = getattr(self, self.event, None)
+            if(event):   
+                event()
+        self.event = None
+
     def mouse_click_event(self):
         current_time = time.time()
         if (current_time - self._last_click_time <= DOUBLE_CLICK_TIME):
             self.mouse_status = 'DOUBLE_CLICK'
             self._last_click_time = current_time
-        else:
+        elif(self.mouse_status == 'FREE'):
             self.mouse_status = 'CLICK'
         self._last_click_time = current_time
 
     def mouse_release_event(self):
-        if(self.creating_edge):
-            self.check_created_edge()
-            self.creating_edge = False
-            self.keyboard_status = 'FREE'
+        if (self.flags['creating_edge']):
+            with self.lock:
+                self.check_created_edge()
+                self.flags['creating_edge'] = False
+                self.keyboard_status = 'FREE'
         self.mouse_status = 'FREE'
+        self.event = 'release_object'
 
-    def events_by_key(self):
+    def update_events_by_key(self):
         key = self.keyboard_status
-        if(key == 'NEW_EDGE' and self.creating_edge == False):
-            self.create_edge_event()
-            self.creating_edge = True
+        if(key == 'NEW_EDGE' and self.flags['creating_edge'] == False):
+            self.event = 'create_edge'
         elif(key == pg.K_DELETE):
-            self.delete_selected_obj_event()
-            self.keyboard_status = 'FREE'
+            self.event = 'delet_object'
         elif(key == pg.K_d):
-            self.algorithm = 'DFS'
-            self.keyboard_status = 'FREE'
+            self.event = 'DFS'
         elif(key == pg.K_b):
-            self.algorithm = 'BFS'
-            self.keyboard_status = 'FREE'
-
-    def events_by_mouse(self):
+            self.event = 'BFS'
+        elif(key == pg.K_s):
+            self.event = 'graph_from_adjacencys'
+        self.keyboard_status = 'FREE'
+        
+    def update_events_by_mouse(self):
         if (self.mouse_status == 'CLICK'):
-            self.select_movable_obj_event()
+            self.event = 'select_object'
             self.mouse_status = 'HELD'
         elif(self.mouse_status == 'DOUBLE_CLICK'):
-            self.create_node_event()
-            self.mouse_status = 'FREE'
+            self.event = 'create_node'
+            self.mouse_status = 'HELD'
         elif(self.mouse_status == 'HELD'):
-            pass
-        elif(self.mouse_status == 'FREE'):
-            self.graph.selected_obj = None
-
-    def run_algorithm(self):
-        if(self.algorithm == 'DFS'):
-            threading.Thread(target=self.graph.dfs,
-                         args=[self.algorithm_sleep],
-                         daemon=True).start()
-            
-        if(self.algorithm == 'BFS'):
-            threading.Thread(target=self.graph.bfs,
-                         args=[self.algorithm_sleep],
-                         daemon=True).start()
-            
-
-        self.algorithm = None
-
+            self.event = 'update_object'
+            self.flags['moving_obj'] = True
 
     def update(self):
-        self.events_by_key()
-        self.events_by_mouse()
-        self.graph.update(self.game.node_radius, self.game.mouse_pos, self.game.arrow_size)
+        self.graph.update()
         
-    def create_node_event(self):
-        self.graph.add_node(self.game.mouse_pos, self.game.font)
+    def create_node(self):
+        self.graph.add_node()
 
-    def create_edge_event(self):
-        self.graph.add_edge(self.game.mouse_pos)
+    def create_edge(self):
+        self.flags['creating_edge'] = True
+        self.graph.add_edge()
         self.mouse_status = 'HELD'
 
-    def select_movable_obj_event(self):
-        self.graph.select_object(self.game.mouse_pos)
+    def select_object(self):
+        self.graph.select_object()
 
-    def delete_selected_obj_event(self):
+    def delet_object(self):
         self.graph.delete_selected_obj()
+
+    def release_object(self):
+        self.flags['moving_obj'] = False
+
+    def update_object(self):
+        if(self.flags['moving_obj']):
+            f = self.graph.update_selected_obj()
+            if (f == 'creating_edge'):
+                self.flags['creating_edge'] = True
     
     def check_created_edge(self):
-        self.graph.check_created_edge(self.game.mouse_pos)
+        self.graph.check_created_edge()
 
-    def update_app_variables(self):
-        self.game.mouse_pos = pg.mouse.get_pos()
+    def DFS(self):
+        threading.Thread(target=self.graph.dfs,
+                         args=[ALGORITHM_SLEEP],
+                         daemon=True).start()
+        
+    def BFS(self):
+        threading.Thread(target=self.graph.bfs,
+                         args=[ALGORITHM_SLEEP],
+                         daemon=True).start()
+
+    def graph_from_adjacencys(self):
+        adjancecys = []
+        with open(os.path.join(self.app.dir, 'adjacency_list.txt'), 'r') as file:
+            for line in file:
+                line = line.strip()
+                if line:
+                    u, v = map(int, line.split())
+                    adjancecys.append([u, v])
+
+        self.graph.from_adjacency_list(adjancecys)
