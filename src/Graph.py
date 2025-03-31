@@ -69,6 +69,7 @@ class Graph:
             self.edges.append(edge)
             self.objects.append(edge)
             node_u.adjacency_list.append(node_v)
+            node_v.predecessors.append(node_u)
 
             
     def check_created_edge(self):
@@ -159,6 +160,69 @@ class Graph:
         
         self.visited = None
         self.nodes_stored = None
+
+    def topoSort(self):
+        nodes = [node.id for node in self.nodes.values()]
+        n = len(nodes)
+        q = deque()
+        deg = [0] * n
+        sorted_graph = []
+
+        for i in nodes:
+            for it in self.nodes[i].adjacency_list:
+                deg[it.id]+=1
+
+        for i in nodes:
+            if(deg[i] == 0):
+                q.append(i)
+
+        while(len(q) > 0):
+            v = q[0]
+            q.popleft()
+            sorted_graph.append(self.nodes[v])
+            for to in self.nodes[v].adjacency_list:
+                deg[to.id]-=1
+                if(deg[to.id] == 0):
+                    q.append(to.id)
+
+        if (len(sorted_graph) != len (nodes)):
+            print("Contem ciclo")
+        return sorted_graph
+    
+    def assign_levels(self):
+        level = {}
+        topoSorted = self.topoSort()
+        for node in topoSorted:
+            if(len(node.predecessors) > 0):
+                level[node.id] = max(level[p.id] for p in node.predecessors) + 1
+            else:
+                level[node.id] = 1
+        return level
+
+    def group_by_level(self):
+        nodes_with_level = self.assign_levels()
+        nodes_per_level = {}
+
+        for node, lv in nodes_with_level.items():
+            if (lv not in nodes_per_level):
+                nodes_per_level[lv] = []
+            nodes_per_level[lv].append(self.nodes[node])
+
+        nodes_per_height = self.app.screen_size[1]//len(nodes_per_level)
+        nodes_per_width = self.app.screen_size[0]//(self.node_radius+2)
+
+        bound = 5
+        y = 10 + self.node_radius
+        for level in nodes_per_level:
+            qtd = self.app.screen_size[0]//(len(nodes_per_level[level])+1)
+
+            x = qtd
+            for node in nodes_per_level[level]:
+                node.update([x,y])
+                x += qtd
+            y += nodes_per_height
+
+
 
 
     def update(self):

@@ -9,6 +9,7 @@ class Node:
         self.pos = np.array(pos)
         self.id = node_id
         self.adjacency_list = []
+        self.predecessors = []
         self.label = text_generator.render(str(self.id), True, get_random_color())
         self.updated = True
     

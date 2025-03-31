@@ -99,6 +99,8 @@ class Logic:
             self.event = 'BFS'
         elif(key == pg.K_s):
             self.event = 'graph_from_adjacencys'
+        elif(key == pg.K_t):
+            self.event = 'topoSort'
         self.keyboard_status = 'FREE'
         
     def update_events_by_mouse(self):
@@ -149,6 +151,10 @@ class Logic:
     def BFS(self):
         threading.Thread(target=self.graph.bfs,
                          args=[ALGORITHM_SLEEP],
+                         daemon=True).start()
+        
+    def topoSort(self):
+        threading.Thread(target=self.graph.group_by_level,
                          daemon=True).start()
 
     def graph_from_adjacencys(self):
